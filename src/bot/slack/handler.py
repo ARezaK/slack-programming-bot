@@ -174,9 +174,9 @@ async def _dispatch_new_task(
             timeout_seconds=settings.task_timeout_seconds,
         )
 
-        if result.success:
+        if result.success and result.progress_handle:
             cost_line = f"\n_Cost: ${result.cost_usd:.4f}_" if result.cost_usd else ""
-            await feedback.send_summary(channel, thread_ts, result.summary + cost_line)
+            await feedback.finalize_progress(result.progress_handle, result.summary + cost_line)
 
         # Store the live session for follow-ups
         _thread_sessions[thread_ts] = ThreadSession(
@@ -214,9 +214,9 @@ async def _dispatch_follow_up(
             timeout_seconds=settings.task_timeout_seconds,
         )
 
-        if result.success:
+        if result.success and result.progress_handle:
             cost_line = f"\n_Cost: ${result.cost_usd:.4f}_" if result.cost_usd else ""
-            await feedback.send_summary(channel, thread_ts, result.summary + cost_line)
+            await feedback.finalize_progress(result.progress_handle, result.summary + cost_line)
 
         _active_tasks.pop(thread_ts, None)
 

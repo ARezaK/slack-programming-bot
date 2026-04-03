@@ -72,10 +72,11 @@ async def test_full_flow_mocked(settings, mock_client):
             await task
 
     # Verify ACK was sent
-    calls = mock_client.chat_postMessage.call_args_list
-    assert any("sonnet" in str(c) for c in calls)
-    # Verify summary was posted
-    assert any("Fixed the bug" in str(c) for c in calls)
+    post_calls = mock_client.chat_postMessage.call_args_list
+    assert any("sonnet" in str(c) for c in post_calls)
+    # Verify summary was edited into the progress message (not posted as new)
+    update_calls = mock_client.chat_update.call_args_list
+    assert any("Fixed the bug" in str(c) for c in update_calls)
 
     # Clean up thread session
     _thread_sessions.pop("1111.0000", None)

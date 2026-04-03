@@ -40,9 +40,11 @@ async def test_follow_up_uses_existing_session():
     mock_sdk_client = AsyncMock()
     mock_runner = MagicMock()
 
-    # Mock continue_session to return a result
+    # Mock continue_session to return a result with a progress handle
     async def mock_continue(client, task_text, feedback, channel, thread_ts, timeout_seconds):
-        return MagicMock(success=True, summary="Pushed and created PR #42", cost_usd=0.01)
+        from bot.slack.feedback import ProgressHandle
+        handle = ProgressHandle(channel=channel, thread_ts=thread_ts, message_ts="prog.0000")
+        return MagicMock(success=True, summary="Pushed and created PR #42", cost_usd=0.01, progress_handle=handle)
 
     mock_runner.continue_session = mock_continue
 
@@ -79,10 +81,12 @@ async def test_follow_up_uses_existing_session():
         if task:
             await task
 
-    # Verify ACK was sent and summary posted
-    calls = mock_client.chat_postMessage.call_args_list
-    assert any("sonnet" in str(c) for c in calls)
-    assert any("PR #42" in str(c) for c in calls)
+    # Verify ACK was sent
+    post_calls = mock_client.chat_postMessage.call_args_list
+    assert any("sonnet" in str(c) for c in post_calls)
+    # Verify summary was edited into the progress message (not posted as new)
+    update_calls = mock_client.chat_update.call_args_list
+    assert any("PR #42" in str(c) for c in update_calls)
 
     # Clean up
     _thread_sessions.pop("1111.0000", None)

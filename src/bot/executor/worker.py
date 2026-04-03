@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 
-from bot.slack.feedback import SlackFeedback
+from bot.slack.feedback import SlackFeedback, ProgressHandle
 
 
 @dataclass
@@ -12,6 +12,7 @@ class TaskResult:
     success: bool
     summary: str
     cost_usd: float | None = None
+    progress_handle: ProgressHandle | None = None
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are a coding agent. The user will give you a task.
@@ -129,6 +130,7 @@ class TaskRunner:
                             success=True,
                             summary=last_text,
                             cost_usd=cost,
+                            progress_handle=progress,
                         )
 
         except TimeoutError:
@@ -138,4 +140,4 @@ class TaskRunner:
             await feedback.send_error(channel, thread_ts, str(e))
             return TaskResult(success=False, summary=str(e))
 
-        return TaskResult(success=True, summary=last_text)
+        return TaskResult(success=True, summary=last_text, progress_handle=progress)

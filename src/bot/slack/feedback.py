@@ -45,11 +45,12 @@ class SlackFeedback:
             text=status,
         )
 
-    async def send_summary(self, channel: str, thread_ts: str, result: str) -> None:
-        await self.client.chat_postMessage(
-            channel=channel,
-            thread_ts=thread_ts,
-            text=result,
+    async def finalize_progress(self, handle: ProgressHandle, summary: str) -> None:
+        """Final edit to the progress message — bypasses throttle."""
+        await self.client.chat_update(
+            channel=handle.channel,
+            ts=handle.message_ts,
+            text=summary,
         )
 
     async def send_error(self, channel: str, thread_ts: str, error_info: str) -> None:

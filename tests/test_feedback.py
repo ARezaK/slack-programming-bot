@@ -49,10 +49,14 @@ async def test_update_progress_throttled(mock_client):
 
 
 @pytest.mark.asyncio
-async def test_send_summary(mock_client):
+async def test_finalize_progress(mock_client):
     fb = SlackFeedback(mock_client)
-    await fb.send_summary("C123", "1111.0000", "Fixed 3 tests. PR: http://example.com")
-    call_kwargs = mock_client.chat_postMessage.call_args.kwargs
+    handle = await fb.create_progress("C123", "1111.0000")
+
+    await fb.finalize_progress(handle, "Fixed 3 tests. PR: http://example.com")
+    # Should edit the existing progress message, not post a new one
+    call_kwargs = mock_client.chat_update.call_args.kwargs
+    assert call_kwargs["ts"] == "1234.5678"  # same message
     assert "Fixed 3 tests" in call_kwargs["text"]
 
 
