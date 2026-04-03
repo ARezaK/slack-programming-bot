@@ -20,7 +20,6 @@ def settings(tmp_path):
     return Settings(
         slack_bot_token="xoxb-test",
         slack_app_token="xapp-test",
-        anthropic_api_key="sk-ant-test",
         repos_base_dir=str(tmp_path),
     )
 

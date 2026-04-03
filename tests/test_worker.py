@@ -14,18 +14,15 @@ def mock_feedback():
 
 def test_build_env_anthropic():
     runner = TaskRunner(
-        anthropic_api_key="sk-test",
         litellm_url="http://localhost:4000",
         repos_base_dir="/tmp/repos",
     )
     env = runner._build_env(provider="anthropic")
-    assert env["ANTHROPIC_API_KEY"] == "sk-test"
-    assert "ANTHROPIC_BASE_URL" not in env
+    assert env == {}  # no env vars needed, CLI uses its own auth
 
 
 def test_build_env_litellm():
     runner = TaskRunner(
-        anthropic_api_key="sk-test",
         litellm_url="http://localhost:4000",
         repos_base_dir="/tmp/repos",
     )
@@ -35,7 +32,6 @@ def test_build_env_litellm():
 
 def test_build_system_prompt():
     runner = TaskRunner(
-        anthropic_api_key="sk-test",
         litellm_url="http://localhost:4000",
         repos_base_dir="/tmp/repos",
         repos_json='{"myrepo": {"path": "myrepo", "aliases": ["mr"]}}',

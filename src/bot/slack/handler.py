@@ -55,7 +55,6 @@ async def handle_mention(event: dict, client, settings: Settings) -> asyncio.Tas
 
     repos = load_repos()
     runner = TaskRunner(
-        anthropic_api_key=settings.anthropic_api_key,
         litellm_url=settings.litellm_url,
         repos_base_dir=settings.repos_base_dir,
         repos_json=json.dumps(repos, indent=2),

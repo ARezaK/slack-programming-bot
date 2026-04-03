@@ -38,18 +38,16 @@ After completing work:
 class TaskRunner:
     def __init__(
         self,
-        anthropic_api_key: str,
         litellm_url: str,
         repos_base_dir: str,
         repos_json: str = "{}",
     ):
-        self.anthropic_api_key = anthropic_api_key
         self.litellm_url = litellm_url
         self.repos_base_dir = repos_base_dir
         self.repos_json = repos_json
 
     def _build_env(self, provider: str) -> dict[str, str]:
-        env = {"ANTHROPIC_API_KEY": self.anthropic_api_key}
+        env: dict[str, str] = {}
         if provider == "litellm":
             env["ANTHROPIC_BASE_URL"] = self.litellm_url
         return env

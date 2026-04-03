@@ -9,7 +9,6 @@ from bot.config.settings import Settings, load_models
 def test_settings_loads_from_env(monkeypatch):
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
     monkeypatch.setenv("SLACK_APP_TOKEN", "xapp-test")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
     monkeypatch.setenv("REPOS_BASE_DIR", "/tmp/repos")
     monkeypatch.setenv("DEFAULT_MODEL", "opus")
     monkeypatch.setenv("TASK_TIMEOUT_SECONDS", "300")
@@ -17,7 +16,6 @@ def test_settings_loads_from_env(monkeypatch):
     settings = Settings()
     assert settings.slack_bot_token == "xoxb-test"
     assert settings.slack_app_token == "xapp-test"
-    assert settings.anthropic_api_key == "sk-ant-test"
     assert settings.repos_base_dir == "/tmp/repos"
     assert settings.default_model == "opus"
     assert settings.task_timeout_seconds == 300
@@ -26,9 +24,12 @@ def test_settings_loads_from_env(monkeypatch):
 def test_settings_defaults(monkeypatch):
     monkeypatch.setenv("SLACK_BOT_TOKEN", "xoxb-test")
     monkeypatch.setenv("SLACK_APP_TOKEN", "xapp-test")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    # Clear any .env overrides so we test actual code defaults
+    monkeypatch.delenv("DEFAULT_MODEL", raising=False)
+    monkeypatch.delenv("TASK_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("LITELLM_URL", raising=False)
 
-    settings = Settings()
+    settings = Settings(_env_file=None)  # skip .env file
     assert settings.default_model == "sonnet"
     assert settings.task_timeout_seconds == 600
     assert settings.litellm_url == "http://localhost:4000"

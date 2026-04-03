@@ -6,11 +6,10 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     slack_bot_token: str
     slack_app_token: str
-    anthropic_api_key: str
     repos_base_dir: str = "/Users/Shared/github"
     litellm_url: str = "http://localhost:4000"
     default_model: str = "sonnet"
