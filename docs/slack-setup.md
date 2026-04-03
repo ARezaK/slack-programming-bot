@@ -34,6 +34,7 @@
 3. Under "Subscribe to bot events", add:
    - `app_mention` — triggers when someone @mentions the bot
    - `message.channels` — to catch thread replies
+   - `message.groups` — to catch thread replies
 4. Click "Save Changes"
 
 ## 5. Install to Workspace
