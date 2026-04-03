@@ -114,6 +114,30 @@ uv run bot-cli test-model sonnet
 @bot add stripe webhook handling to PMSS
 ```
 
+### Thread Conversations
+
+The bot is thread-aware in two ways:
+
+**Follow-ups:** After the bot completes a task, `@mention` it in the same thread to continue the conversation. The agent keeps its full context (files, git state, reasoning) across turns — it's the same session, not a fresh start.
+
+```
+@bot fix the failing login tests in PMSS
+  → Bot: Fixed 3 tests. Created branch. Want me to push and create a PR?
+@bot yes please push it
+  → Bot: Pushed and created PR #42
+```
+
+**Jumping into existing threads:** You can discuss something with teammates in a thread, then drop the bot in mid-conversation. It fetches the full thread history and sees everything that was said.
+
+```
+@John: I think we should refactor the auth middleware to use JWT
+@Eric: agreed, here's the file that needs changing: auth.py lines 40-60
+@bot make the change suggested above for PMSS
+  → Bot sees the full conversation and knows exactly what to do
+```
+
+Note: the bot only responds when `@mentioned` — it won't react to casual messages in threads.
+
 ### What the bot posts
 
 1. **ACK** — "Got it, working on this using `sonnet`..."
