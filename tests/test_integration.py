@@ -23,6 +23,12 @@ def mock_client():
     client = AsyncMock()
     client.chat_postMessage = AsyncMock(return_value={"ts": "1234.5678"})
     client.chat_update = AsyncMock(return_value={"ok": True})
+    # Return only the current message (no prior thread context)
+    client.conversations_replies = AsyncMock(return_value={
+        "messages": [
+            {"user": "U123", "text": "<@UBOT> model=sonnet fix the login bug"},
+        ]
+    })
     return client
 
 

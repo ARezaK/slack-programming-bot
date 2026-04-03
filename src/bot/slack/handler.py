@@ -34,6 +34,39 @@ class ThreadSession:
     runner: TaskRunner
 
 
+async def fetch_thread_context(client, channel: str, thread_ts: str, bot_user_id: str | None = None) -> str | None:
+    """Fetch prior messages in a thread and format them as context for the agent.
+
+    Returns None if there are no prior messages (i.e., the @mention is the first message).
+    """
+    try:
+        result = await client.conversations_replies(
+            channel=channel,
+            ts=thread_ts,
+            limit=50,
+        )
+    except Exception:
+        return None
+
+    messages = result.get("messages", [])
+    if len(messages) <= 1:
+        # Only the current message — no prior context
+        return None
+
+    lines = []
+    for msg in messages:
+        user = msg.get("user", "unknown")
+        text = msg.get("text", "")
+        # Skip bot messages from ourselves
+        if bot_user_id and msg.get("user") == bot_user_id:
+            user = "bot (you)"
+        # Clean up Slack user mentions for readability
+        text = re.sub(r"<@(\w+)>", r"@\1", text)
+        lines.append(f"@{user}: {text}")
+
+    return "\n".join(lines)
+
+
 # Active tasks (currently running) keyed by thread_ts
 _active_tasks: dict[str, asyncio.Task] = {}
 
@@ -87,6 +120,16 @@ async def handle_mention(event: dict, client, settings: Settings) -> asyncio.Tas
             await old_session.client.disconnect()
         except Exception:
             pass
+
+    # Fetch thread history so the agent can see the full conversation
+    thread_context = await fetch_thread_context(client, channel, thread_ts)
+    if thread_context:
+        task_text = (
+            f"Here is the Slack thread conversation for context:\n\n"
+            f"{thread_context}\n\n"
+            f"---\n\n"
+            f"Your task (from the latest message): {task_text}"
+        )
 
     return await _dispatch_new_task(
         task_text=task_text,

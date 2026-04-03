@@ -2,7 +2,7 @@
 import asyncio
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from bot.slack.handler import extract_model, strip_bot_mention, handle_mention, _thread_sessions, ThreadSession
+from bot.slack.handler import extract_model, strip_bot_mention, handle_mention, fetch_thread_context, _thread_sessions, ThreadSession
 from bot.config.settings import Settings
 
 
@@ -86,3 +86,49 @@ async def test_follow_up_uses_existing_session():
 
     # Clean up
     _thread_sessions.pop("1111.0000", None)
+
+
+@pytest.mark.asyncio
+async def test_fetch_thread_context():
+    """fetch_thread_context should format thread messages into readable context."""
+    mock_client = AsyncMock()
+    mock_client.conversations_replies = AsyncMock(return_value={
+        "messages": [
+            {"user": "U001", "text": "I think we should refactor the auth middleware"},
+            {"user": "U002", "text": "agreed, the JWT handling is a mess"},
+            {"user": "U001", "text": "here's the file that needs changing: auth.py lines 40-60"},
+            {"user": "U003", "text": "<@UBOT> make the change suggested above for PMSS"},
+        ]
+    })
+
+    result = await fetch_thread_context(mock_client, "C123", "1111.0000")
+
+    assert result is not None
+    assert "@U001: I think we should refactor" in result
+    assert "@U002: agreed" in result
+    assert "auth.py lines 40-60" in result
+    assert "make the change suggested above" in result
+
+
+@pytest.mark.asyncio
+async def test_fetch_thread_context_no_prior_messages():
+    """If the @mention is the first message, return None (no context to inject)."""
+    mock_client = AsyncMock()
+    mock_client.conversations_replies = AsyncMock(return_value={
+        "messages": [
+            {"user": "U001", "text": "<@UBOT> fix the login bug"},
+        ]
+    })
+
+    result = await fetch_thread_context(mock_client, "C123", "1111.0000")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_thread_context_api_failure():
+    """If the Slack API call fails, return None gracefully."""
+    mock_client = AsyncMock()
+    mock_client.conversations_replies = AsyncMock(side_effect=Exception("API error"))
+
+    result = await fetch_thread_context(mock_client, "C123", "1111.0000")
+    assert result is None
