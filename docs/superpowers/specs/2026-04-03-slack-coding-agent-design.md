@@ -95,7 +95,7 @@ The `path` field is relative to `REPOS_BASE_DIR`.
 ```json
 {
   "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
-  "opus": {"provider": "anthropic", "model_id": "claude-opus-4-0-20250115"},
+  "opus": {"provider": "anthropic", "model_id": "claude-opus-4-0-20250516"},
   "haiku": {"provider": "anthropic", "model_id": "claude-haiku-4-5-20251001"},
   "qwen3": {"provider": "litellm", "model_id": "ollama/qwen3"},
   "local": {"provider": "litellm", "model_id": "ollama/qwen3"}
