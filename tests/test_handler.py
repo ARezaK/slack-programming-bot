@@ -1,6 +1,8 @@
+# tests/test_handler.py
+import asyncio
 import pytest
-from bot.slack.handler import extract_model, strip_bot_mention, ThreadContext, _thread_contexts, handle_thread_reply
 from unittest.mock import AsyncMock, MagicMock, patch
+from bot.slack.handler import extract_model, strip_bot_mention, handle_mention, _thread_sessions, ThreadSession
 from bot.config.settings import Settings
 
 
@@ -33,19 +35,23 @@ def test_strip_bot_mention_no_mention():
 
 
 @pytest.mark.asyncio
-async def test_handle_thread_reply_with_context():
-    """Thread replies should include prior conversation context in the prompt."""
-    # Set up a thread context as if a previous task completed
-    _thread_contexts["1111.0000"] = ThreadContext(
+async def test_follow_up_uses_existing_session():
+    """When @mentioning in a thread with a prior session, the bot continues that session."""
+    mock_sdk_client = AsyncMock()
+    mock_runner = MagicMock()
+
+    # Mock continue_session to return a result
+    async def mock_continue(client, task_text, feedback, channel, thread_ts, timeout_seconds):
+        return MagicMock(success=True, summary="Pushed and created PR #42", cost_usd=0.01)
+
+    mock_runner.continue_session = mock_continue
+
+    _thread_sessions["1111.0000"] = ThreadSession(
         model_name="sonnet",
         model_id="claude-sonnet-4-20250514",
         provider="anthropic",
-        original_task="fix the login tests in GTG",
-        last_summary="Fixed 3 tests. Created branch fix-login. Want me to push and create a PR?",
-        history=[{
-            "user": "fix the login tests in GTG",
-            "agent": "Fixed 3 tests. Created branch fix-login. Want me to push and create a PR?",
-        }],
+        client=mock_sdk_client,
+        runner=mock_runner,
     )
 
     mock_client = AsyncMock()
@@ -58,40 +64,25 @@ async def test_handle_thread_reply_with_context():
         _env_file=None,
     )
 
+    # Simulate a follow-up @mention in the same thread
     event = {
-        "text": "yes",
+        "text": "<@U123> yes please push it",
         "channel": "C123",
         "ts": "3333.0000",
         "thread_ts": "1111.0000",
     }
 
-    captured_prompt = {}
-
-    async def mock_query(*args, **kwargs):
-        from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
-        captured_prompt["text"] = kwargs.get("prompt") or (args[0] if args else "")
-        assistant = MagicMock(spec=AssistantMessage)
-        text_block = MagicMock(spec=TextBlock)
-        text_block.text = "Pushed and created PR #42"
-        assistant.content = [text_block]
-        yield assistant
-        result = MagicMock(spec=ResultMessage)
-        result.total_cost_usd = 0.01
-        yield result
-
-    with patch("bot.executor.worker.query", side_effect=mock_query), \
-         patch("bot.slack.handler.load_models", return_value={
-             "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
-         }), \
-         patch("bot.slack.handler.load_repos", return_value={}):
-        task = await handle_thread_reply(event, mock_client, settings)
+    with patch("bot.slack.handler.load_models", return_value={
+        "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
+    }), patch("bot.slack.handler.load_repos", return_value={}):
+        task = await handle_mention(event, mock_client, settings)
         if task:
             await task
 
-    # The prompt sent to the agent should contain the conversation history
-    assert "fix the login tests" in captured_prompt["text"]
-    assert "yes" in captured_prompt["text"]
-    assert "follow-up" in captured_prompt["text"].lower()
+    # Verify ACK was sent and summary posted
+    calls = mock_client.chat_postMessage.call_args_list
+    assert any("sonnet" in str(c) for c in calls)
+    assert any("PR #42" in str(c) for c in calls)
 
     # Clean up
-    _thread_contexts.pop("1111.0000", None)
+    _thread_sessions.pop("1111.0000", None)

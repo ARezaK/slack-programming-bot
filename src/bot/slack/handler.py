@@ -2,7 +2,8 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, field
-from pathlib import Path
+
+from claude_agent_sdk import ClaudeSDKClient
 
 from bot.config.settings import Settings, load_models, load_repos
 from bot.executor.worker import TaskRunner, TaskResult
@@ -24,24 +25,24 @@ def strip_bot_mention(text: str) -> str:
 
 
 @dataclass
-class ThreadContext:
-    """Stores conversation context for a completed thread so follow-ups work."""
+class ThreadSession:
+    """Stores a live SDK client session for a thread."""
     model_name: str
     model_id: str
     provider: str
-    original_task: str
-    last_summary: str
-    history: list[dict] = field(default_factory=list)
+    client: ClaudeSDKClient
+    runner: TaskRunner
 
 
-# Active tasks keyed by thread_ts
+# Active tasks (currently running) keyed by thread_ts
 _active_tasks: dict[str, asyncio.Task] = {}
 
-# Completed thread contexts keyed by thread_ts
-_thread_contexts: dict[str, ThreadContext] = {}
+# Live sessions for threads that completed at least one task
+_thread_sessions: dict[str, ThreadSession] = {}
 
 
 async def handle_mention(event: dict, client, settings: Settings) -> asyncio.Task | None:
+    """Handle an @mention — either a new task or a follow-up in an existing thread."""
     channel = event["channel"]
     thread_ts = event.get("thread_ts") or event["ts"]
     raw_text = event.get("text", "")
@@ -49,7 +50,21 @@ async def handle_mention(event: dict, client, settings: Settings) -> asyncio.Tas
     text = strip_bot_mention(raw_text)
     model_hint, task_text = extract_model(text)
 
-    # Resolve model
+    # Check if this is a follow-up in an existing thread session
+    session = _thread_sessions.get(thread_ts)
+
+    if session and not model_hint:
+        # Follow-up in existing session — continue the conversation
+        return await _dispatch_follow_up(
+            session=session,
+            task_text=task_text,
+            channel=channel,
+            thread_ts=thread_ts,
+            settings=settings,
+            client=client,
+        )
+
+    # New task (or model override = start fresh)
     models = load_models()
     model_name = model_hint or settings.default_model
     model_config = models.get(model_name)
@@ -65,7 +80,15 @@ async def handle_mention(event: dict, client, settings: Settings) -> asyncio.Tas
     model_id = model_config["model_id"]
     provider = model_config["provider"]
 
-    return await _dispatch_task(
+    # If there's an old session for this thread, clean it up
+    old_session = _thread_sessions.pop(thread_ts, None)
+    if old_session:
+        try:
+            await old_session.client.disconnect()
+        except Exception:
+            pass
+
+    return await _dispatch_new_task(
         task_text=task_text,
         model_name=model_name,
         model_id=model_id,
@@ -77,58 +100,7 @@ async def handle_mention(event: dict, client, settings: Settings) -> asyncio.Tas
     )
 
 
-async def handle_thread_reply(event: dict, client, settings: Settings) -> asyncio.Task | None:
-    """Handle a reply in a thread where the bot previously completed a task."""
-    channel = event["channel"]
-    thread_ts = event["thread_ts"]
-    raw_text = event.get("text", "")
-    text = strip_bot_mention(raw_text)
-
-    ctx = _thread_contexts.get(thread_ts)
-    if ctx is None:
-        return None
-
-    # Check for model override in follow-up
-    model_hint, task_text = extract_model(text)
-    if model_hint:
-        models = load_models()
-        model_config = models.get(model_hint)
-        if model_config:
-            ctx.model_name = model_hint
-            ctx.model_id = model_config["model_id"]
-            ctx.provider = model_config["provider"]
-
-    # Build a prompt that includes conversation history
-    history_lines = []
-    for entry in ctx.history:
-        history_lines.append(f"User: {entry['user']}")
-        history_lines.append(f"Agent: {entry['agent']}")
-    history_text = "\n".join(history_lines)
-
-    contextual_prompt = f"""This is a follow-up in an ongoing conversation.
-
-Previous conversation:
-{history_text}
-
-User's new message: {task_text}
-
-Continue where you left off. You already know which repo this is about from the conversation above."""
-
-    return await _dispatch_task(
-        task_text=contextual_prompt,
-        model_name=ctx.model_name,
-        model_id=ctx.model_id,
-        provider=ctx.provider,
-        channel=channel,
-        thread_ts=thread_ts,
-        settings=settings,
-        client=client,
-        thread_context=ctx,
-        raw_user_text=task_text,
-    )
-
-
-async def _dispatch_task(
+async def _dispatch_new_task(
     task_text: str,
     model_name: str,
     model_id: str,
@@ -137,8 +109,6 @@ async def _dispatch_task(
     thread_ts: str,
     settings: Settings,
     client,
-    thread_context: ThreadContext | None = None,
-    raw_user_text: str | None = None,
 ) -> asyncio.Task:
     feedback = SlackFeedback(client)
     await feedback.send_ack(channel, thread_ts, model_name)
@@ -151,7 +121,7 @@ async def _dispatch_task(
     )
 
     async def _run_task():
-        result = await runner.run(
+        result, sdk_client = await runner.run(
             task_text=task_text,
             model_id=model_id,
             provider=provider,
@@ -160,35 +130,53 @@ async def _dispatch_task(
             thread_ts=thread_ts,
             timeout_seconds=settings.task_timeout_seconds,
         )
+
         if result.success:
             cost_line = f"\n_Cost: ${result.cost_usd:.4f}_" if result.cost_usd else ""
             await feedback.send_summary(channel, thread_ts, result.summary + cost_line)
 
-        # Update or create thread context for future follow-ups
-        user_text = raw_user_text or task_text
-        if thread_context:
-            thread_context.history.append({
-                "user": user_text,
-                "agent": result.summary[:500] if result.summary else "(no response)",
-            })
-            thread_context.last_summary = result.summary or ""
-        else:
-            ctx = ThreadContext(
-                model_name=model_name,
-                model_id=model_id,
-                provider=provider,
-                original_task=task_text,
-                last_summary=result.summary or "",
-                history=[{
-                    "user": user_text,
-                    "agent": result.summary[:500] if result.summary else "(no response)",
-                }],
-            )
-            _thread_contexts[thread_ts] = ctx
-
-        # Remove from active tasks
+        # Store the live session for follow-ups
+        _thread_sessions[thread_ts] = ThreadSession(
+            model_name=model_name,
+            model_id=model_id,
+            provider=provider,
+            client=sdk_client,
+            runner=runner,
+        )
         _active_tasks.pop(thread_ts, None)
 
     task = asyncio.create_task(_run_task())
+    _active_tasks[thread_ts] = task
+    return task
+
+
+async def _dispatch_follow_up(
+    session: ThreadSession,
+    task_text: str,
+    channel: str,
+    thread_ts: str,
+    settings: Settings,
+    client,
+) -> asyncio.Task:
+    feedback = SlackFeedback(client)
+    await feedback.send_ack(channel, thread_ts, session.model_name)
+
+    async def _run_follow_up():
+        result = await session.runner.continue_session(
+            client=session.client,
+            task_text=task_text,
+            feedback=feedback,
+            channel=channel,
+            thread_ts=thread_ts,
+            timeout_seconds=settings.task_timeout_seconds,
+        )
+
+        if result.success:
+            cost_line = f"\n_Cost: ${result.cost_usd:.4f}_" if result.cost_usd else ""
+            await feedback.send_summary(channel, thread_ts, result.summary + cost_line)
+
+        _active_tasks.pop(thread_ts, None)
+
+    task = asyncio.create_task(_run_follow_up())
     _active_tasks[thread_ts] = task
     return task

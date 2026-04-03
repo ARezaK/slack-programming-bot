@@ -1,13 +1,10 @@
-# src/bot/executor/worker.py
 import asyncio
-import json
 from dataclasses import dataclass
-from pathlib import Path
 
-from claude_agent_sdk import query, ClaudeAgentOptions
+from claude_agent_sdk import ClaudeSDKClient, ClaudeAgentOptions
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock, ToolUseBlock
 
-from bot.slack.feedback import SlackFeedback, ProgressHandle
+from bot.slack.feedback import SlackFeedback
 
 
 @dataclass
@@ -58,6 +55,16 @@ class TaskRunner:
             repos_json=self.repos_json,
         )
 
+    def _build_options(self, model_id: str, provider: str) -> ClaudeAgentOptions:
+        return ClaudeAgentOptions(
+            model=model_id,
+            cwd=self.repos_base_dir,
+            system_prompt=self._build_system_prompt(),
+            permission_mode="bypassPermissions",
+            max_turns=50,
+            env=self._build_env(provider),
+        )
+
     async def run(
         self,
         task_text: str,
@@ -67,23 +74,48 @@ class TaskRunner:
         channel: str,
         thread_ts: str,
         timeout_seconds: int = 600,
+    ) -> tuple[TaskResult, ClaudeSDKClient]:
+        """Run a task, returning the result and the live client for follow-ups."""
+        options = self._build_options(model_id, provider)
+        client = ClaudeSDKClient(options=options)
+        await client.connect()
+
+        result = await self._execute_turn(
+            client, task_text, feedback, channel, thread_ts, timeout_seconds
+        )
+        # Don't disconnect — keep client alive for follow-ups
+        return result, client
+
+    async def continue_session(
+        self,
+        client: ClaudeSDKClient,
+        task_text: str,
+        feedback: SlackFeedback,
+        channel: str,
+        thread_ts: str,
+        timeout_seconds: int = 600,
     ) -> TaskResult:
-        env = self._build_env(provider)
-        options = ClaudeAgentOptions(
-            model=model_id,
-            cwd=self.repos_base_dir,
-            system_prompt=self._build_system_prompt(),
-            permission_mode="bypassPermissions",
-            max_turns=50,
-            env=env,
+        """Continue an existing session with a follow-up message."""
+        return await self._execute_turn(
+            client, task_text, feedback, channel, thread_ts, timeout_seconds
         )
 
+    async def _execute_turn(
+        self,
+        client: ClaudeSDKClient,
+        task_text: str,
+        feedback: SlackFeedback,
+        channel: str,
+        thread_ts: str,
+        timeout_seconds: int,
+    ) -> TaskResult:
         progress = await feedback.create_progress(channel, thread_ts)
         last_text = ""
 
         try:
             async with asyncio.timeout(timeout_seconds):
-                async for message in query(prompt=task_text, options=options):
+                await client.query(task_text)
+                async for message in client.receive_response():
                     if isinstance(message, AssistantMessage):
                         for block in message.content:
                             if isinstance(block, TextBlock):

@@ -4,23 +4,17 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from bot.slack.handler import handle_mention
+from bot.slack.handler import handle_mention, _thread_sessions
 from bot.config.settings import Settings
 
 
 @pytest.fixture
 def settings(tmp_path):
-    # Create models.json
-    models_file = tmp_path / "config" / "models.json"
-    models_file.parent.mkdir(parents=True)
-    models_file.write_text(json.dumps({
-        "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
-    }))
-
     return Settings(
         slack_bot_token="xoxb-test",
         slack_app_token="xapp-test",
         repos_base_dir=str(tmp_path),
+        _env_file=None,
     )
 
 
@@ -41,31 +35,41 @@ async def test_full_flow_mocked(settings, mock_client):
         "ts": "1111.0000",
     }
 
-    # Mock the SDK query to return our fake messages
-    async def mock_query(*args, **kwargs):
-        from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
+    mock_sdk_client = AsyncMock()
 
-        # Yield an assistant message
+    # Mock ClaudeSDKClient
+    mock_sdk_instance = AsyncMock()
+
+    async def mock_receive():
+        from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
         assistant = MagicMock(spec=AssistantMessage)
         text_block = MagicMock(spec=TextBlock)
         text_block.text = "Fixed the bug in auth.py"
         assistant.content = [text_block]
         yield assistant
-
-        # Yield a result message
         result = MagicMock(spec=ResultMessage)
         result.total_cost_usd = 0.01
         yield result
 
-    with patch("bot.executor.worker.query", side_effect=mock_query), \
+    mock_sdk_instance.connect = AsyncMock()
+    mock_sdk_instance.query = AsyncMock()
+    mock_sdk_instance.receive_response = mock_receive
+    mock_sdk_instance.disconnect = AsyncMock()
+
+    with patch("bot.executor.worker.ClaudeSDKClient", return_value=mock_sdk_instance), \
          patch("bot.slack.handler.load_models", return_value={
              "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
          }), \
          patch("bot.slack.handler.load_repos", return_value={}):
         task = await handle_mention(event, mock_client, settings)
         if task:
-            await task  # await the background task directly — no sleep
+            await task
 
     # Verify ACK was sent
     calls = mock_client.chat_postMessage.call_args_list
     assert any("sonnet" in str(c) for c in calls)
+    # Verify summary was posted
+    assert any("Fixed the bug" in str(c) for c in calls)
+
+    # Clean up thread session
+    _thread_sessions.pop("1111.0000", None)

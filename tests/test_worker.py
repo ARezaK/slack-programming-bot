@@ -39,3 +39,14 @@ def test_build_system_prompt():
     prompt = runner._build_system_prompt()
     assert "/tmp/repos" in prompt
     assert "myrepo" in prompt
+
+
+def test_build_options():
+    runner = TaskRunner(
+        litellm_url="http://localhost:4000",
+        repos_base_dir="/tmp/repos",
+    )
+    options = runner._build_options("claude-sonnet-4-20250514", "anthropic")
+    assert options.model == "claude-sonnet-4-20250514"
+    assert options.cwd == "/tmp/repos"
+    assert options.permission_mode == "bypassPermissions"
