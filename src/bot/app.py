@@ -4,7 +4,7 @@ from slack_bolt.async_app import AsyncApp
 from slack_bolt.adapter.socket_mode.async_handler import AsyncSocketModeHandler
 
 from bot.config.settings import Settings, get_settings
-from bot.slack.handler import handle_mention, _active_tasks
+from bot.slack.handler import handle_mention, handle_thread_reply, _active_tasks, _thread_contexts
 
 
 def create_app(settings: Settings | None = None) -> AsyncApp:
@@ -22,13 +22,19 @@ def create_app(settings: Settings | None = None) -> AsyncApp:
         # Ignore non-thread messages and bot messages
         if "thread_ts" not in event or event.get("bot_id"):
             return
+        # Ignore messages that are @mentions (handled by on_mention)
+        if event.get("subtype") == "bot_message":
+            return
 
         thread_ts = event["thread_ts"]
-        # If there's an active task for this thread, queue the follow-up
-        if thread_ts in _active_tasks:
-            task_info = _active_tasks[thread_ts]
-            if hasattr(task_info, "follow_up_queue"):
-                await task_info.follow_up_queue.put(event.get("text", ""))
+
+        # Skip if there's already an active task running for this thread
+        if thread_ts in _active_tasks and not _active_tasks[thread_ts].done():
+            return
+
+        # If this thread has prior context, treat as a follow-up
+        if thread_ts in _thread_contexts:
+            await handle_thread_reply(event, client, settings)
 
     return app
 
