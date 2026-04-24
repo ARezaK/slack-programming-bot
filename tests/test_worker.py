@@ -1,8 +1,7 @@
 # tests/test_worker.py
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from bot.executor.worker import TaskRunner, TaskResult
+from unittest.mock import AsyncMock, MagicMock
+from bot.executor.worker import TaskRunner
 
 
 @pytest.fixture
@@ -12,27 +11,8 @@ def mock_feedback():
     return fb
 
 
-def test_build_env_anthropic():
-    runner = TaskRunner(
-        litellm_url="http://localhost:4000",
-        repos_base_dir="/tmp/repos",
-    )
-    env = runner._build_env(provider="anthropic")
-    assert env == {}  # no env vars needed, CLI uses its own auth
-
-
-def test_build_env_litellm():
-    runner = TaskRunner(
-        litellm_url="http://localhost:4000",
-        repos_base_dir="/tmp/repos",
-    )
-    env = runner._build_env(provider="litellm")
-    assert env["ANTHROPIC_BASE_URL"] == "http://localhost:4000"
-
-
 def test_build_system_prompt():
     runner = TaskRunner(
-        litellm_url="http://localhost:4000",
         repos_base_dir="/tmp/repos",
         repos_json='{"myrepo": {"path": "myrepo", "aliases": ["mr"]}}',
     )
@@ -43,10 +23,9 @@ def test_build_system_prompt():
 
 def test_build_options():
     runner = TaskRunner(
-        litellm_url="http://localhost:4000",
         repos_base_dir="/tmp/repos",
     )
-    options = runner._build_options("claude-sonnet-4-20250514", "anthropic")
+    options = runner._build_options("claude-sonnet-4-20250514")
     assert options.model == "claude-sonnet-4-20250514"
     assert options.cwd == "/tmp/repos"
     assert options.permission_mode == "bypassPermissions"

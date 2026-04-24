@@ -36,19 +36,11 @@ After completing work:
 class TaskRunner:
     def __init__(
         self,
-        litellm_url: str,
         repos_base_dir: str,
         repos_json: str = "{}",
     ):
-        self.litellm_url = litellm_url
         self.repos_base_dir = repos_base_dir
         self.repos_json = repos_json
-
-    def _build_env(self, provider: str) -> dict[str, str]:
-        env: dict[str, str] = {}
-        if provider == "litellm":
-            env["ANTHROPIC_BASE_URL"] = self.litellm_url
-        return env
 
     def _build_system_prompt(self) -> str:
         return SYSTEM_PROMPT_TEMPLATE.format(
@@ -56,28 +48,26 @@ class TaskRunner:
             repos_json=self.repos_json,
         )
 
-    def _build_options(self, model_id: str, provider: str) -> ClaudeAgentOptions:
+    def _build_options(self, model_id: str) -> ClaudeAgentOptions:
         return ClaudeAgentOptions(
             model=model_id,
             cwd=self.repos_base_dir,
             system_prompt=self._build_system_prompt(),
             permission_mode="bypassPermissions",
             max_turns=50,
-            env=self._build_env(provider),
         )
 
     async def run(
         self,
         task_text: str,
         model_id: str,
-        provider: str,
         feedback: SlackFeedback,
         channel: str,
         thread_ts: str,
         timeout_seconds: int = 600,
     ) -> tuple[TaskResult, ClaudeSDKClient]:
         """Run a task, returning the result and the live client for follow-ups."""
-        options = self._build_options(model_id, provider)
+        options = self._build_options(model_id)
         client = ClaudeSDKClient(options=options)
         await client.connect()
 

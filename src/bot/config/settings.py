@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     slack_bot_token: str
     slack_app_token: str
     repos_base_dir: str = "/Users/Shared/github"
-    litellm_url: str = "http://localhost:4000"
+    lmstudio_url: str = "http://localhost:1234/v1"
     default_model: str = "sonnet"
     task_timeout_seconds: int = 600
 

@@ -1,6 +1,6 @@
 # slack-programming-bot
 
-A Slack bot that receives coding tasks via @mentions, dispatches them to Claude Code, and streams progress + results back into the Slack thread. Supports multiple repos and multiple models (Anthropic cloud + local models via LiteLLM).
+A Slack bot that receives coding tasks via @mentions, dispatches them to Claude Code (or a local LM Studio model), and streams progress + results back into the Slack thread. Supports multiple repos and multiple models (Anthropic cloud + local models on LM Studio).
 
 ## How It Works
 
@@ -50,7 +50,7 @@ uv run bot-cli run
 | `SLACK_BOT_TOKEN` | Yes | - | Bot User OAuth Token (`xoxb-...`) |
 | `SLACK_APP_TOKEN` | Yes | - | App-Level Token (`xapp-...`) for Socket Mode |
 | `REPOS_BASE_DIR` | No | `/Users/Shared/github` | Directory containing all your repos |
-| `LITELLM_URL` | No | `http://localhost:4000` | LiteLLM proxy URL for local models |
+| `LMSTUDIO_URL` | No | `http://localhost:1234/v1` | LM Studio OpenAI-compatible endpoint (override for remote/Tailscale) |
 | `DEFAULT_MODEL` | No | `sonnet` | Default model when none specified |
 | `TASK_TIMEOUT_SECONDS` | No | `600` | Max time per task in seconds |
 
@@ -61,15 +61,14 @@ Maps model aliases to providers. Add new models by adding a line:
 ```json
 {
   "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
-  "opus": {"provider": "anthropic", "model_id": "claude-opus-4-0-20250516"},
+  "opus": {"provider": "anthropic", "model_id": "claude-opus-4-6"},
   "haiku": {"provider": "anthropic", "model_id": "claude-haiku-4-5-20251001"},
-  "qwen3": {"provider": "litellm", "model_id": "ollama/qwen3"},
-  "local": {"provider": "litellm", "model_id": "ollama/qwen3"}
+  "qwen": {"provider": "lmstudio", "model_id": "qwen/qwen3.6-35b-a3b"}
 }
 ```
 
 - `anthropic` provider: uses Claude Code CLI directly (your logged-in plan)
-- `litellm` provider: routes through LiteLLM proxy (for Ollama, vLLM, OpenAI, etc.)
+- `lmstudio` provider: talks to an LM Studio server over its OpenAI-compatible API and runs a built-in tool loop (Read, Write, Edit, Bash). The `model_id` must match a model loaded in LM Studio.
 
 ### Repo Registry (config/repos.json)
 
@@ -146,16 +145,15 @@ Note: the bot only responds when `@mentioned` — it won't react to casual messa
 
 ## Using Local Models
 
-To use local models (Ollama, vLLM, etc.), you need [LiteLLM](https://docs.litellm.ai/) running as a proxy:
+Load a model in [LM Studio](https://lmstudio.ai/) and start its server (default port 1234). Set `LMSTUDIO_URL` in `.env` to the host:port (e.g. a Tailscale address if LM Studio is on another machine), then add an entry in `config/models.json`:
 
-```bash
-pip install 'litellm[proxy]'
-litellm --model ollama/qwen3
+```json
+"qwen": {"provider": "lmstudio", "model_id": "qwen/qwen3.6-35b-a3b"}
 ```
 
-Then in Slack: `@bot model=qwen3 investigate this bug`
+Then in Slack: `@bot model=qwen investigate this bug`.
 
-LiteLLM is needed because Claude Code speaks the Anthropic Messages API, while local providers use OpenAI-compatible APIs. LiteLLM translates between the two.
+The bot calls LM Studio directly (no proxy) and runs its own tool-execution loop. We tried fronting LM Studio with the LiteLLM Anthropic-bridge so claude-agent-sdk could talk to it transparently, but the bridge mangled tool-call arguments — so non-Anthropic models go through a separate, simpler runner instead.
 
 ## Project Structure
 
@@ -166,7 +164,8 @@ src/bot/
     handler.py         # Slack event handling, model extraction
     feedback.py        # Thread updates (ACK, progress, summary)
   executor/
-    worker.py          # Claude Agent SDK execution
+    worker.py          # Claude Agent SDK execution (anthropic provider)
+    lmstudio_runner.py # OpenAI SDK + tool loop (lmstudio provider)
   app.py               # Slack Bolt + Socket Mode entrypoint
   cli.py               # CLI commands
 config/

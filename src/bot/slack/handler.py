@@ -2,11 +2,11 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, field
-
-from claude_agent_sdk import ClaudeSDKClient
+from typing import Any
 
 from bot.config.settings import Settings, load_models, load_repos
 from bot.executor.worker import TaskRunner, TaskResult
+from bot.executor.lmstudio_runner import LMStudioRunner, LMStudioSession
 from bot.slack.feedback import SlackFeedback
 
 
@@ -26,12 +26,12 @@ def strip_bot_mention(text: str) -> str:
 
 @dataclass
 class ThreadSession:
-    """Stores a live SDK client session for a thread."""
+    """Stores a live runner session for a thread (provider-dependent client type)."""
     model_name: str
     model_id: str
     provider: str
-    client: ClaudeSDKClient
-    runner: TaskRunner
+    client: Any  # ClaudeSDKClient for anthropic, LMStudioSession for lmstudio
+    runner: Any  # TaskRunner or LMStudioRunner
 
 
 async def fetch_thread_context(client, channel: str, thread_ts: str, bot_user_id: str | None = None) -> str | None:
@@ -115,7 +115,7 @@ async def handle_mention(event: dict, client, settings: Settings) -> asyncio.Tas
 
     # If there's an old session for this thread, clean it up
     old_session = _thread_sessions.pop(thread_ts, None)
-    if old_session:
+    if old_session and hasattr(old_session.client, "disconnect"):
         try:
             await old_session.client.disconnect()
         except Exception:
@@ -157,17 +157,23 @@ async def _dispatch_new_task(
     await feedback.send_ack(channel, thread_ts, model_name)
 
     repos = load_repos()
-    runner = TaskRunner(
-        litellm_url=settings.litellm_url,
-        repos_base_dir=settings.repos_base_dir,
-        repos_json=json.dumps(repos, indent=2),
-    )
+    repos_json = json.dumps(repos, indent=2)
+    if provider == "lmstudio":
+        runner: Any = LMStudioRunner(
+            base_url=settings.lmstudio_url,
+            repos_base_dir=settings.repos_base_dir,
+            repos_json=repos_json,
+        )
+    else:
+        runner = TaskRunner(
+            repos_base_dir=settings.repos_base_dir,
+            repos_json=repos_json,
+        )
 
     async def _run_task():
         result, sdk_client = await runner.run(
             task_text=task_text,
             model_id=model_id,
-            provider=provider,
             feedback=feedback,
             channel=channel,
             thread_ts=thread_ts,
@@ -205,7 +211,7 @@ async def _dispatch_follow_up(
     await feedback.send_ack(channel, thread_ts, session.model_name)
 
     async def _run_follow_up():
-        result = await session.runner.continue_session(
+        kwargs = dict(
             client=session.client,
             task_text=task_text,
             feedback=feedback,
@@ -213,6 +219,9 @@ async def _dispatch_follow_up(
             thread_ts=thread_ts,
             timeout_seconds=settings.task_timeout_seconds,
         )
+        if isinstance(session.runner, LMStudioRunner):
+            kwargs["model_id"] = session.model_id
+        result = await session.runner.continue_session(**kwargs)
 
         if result.success and result.progress_handle:
             cost_line = f"\n_Cost: ${result.cost_usd:.4f}_" if result.cost_usd else ""

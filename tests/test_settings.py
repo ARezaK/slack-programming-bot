@@ -27,23 +27,23 @@ def test_settings_defaults(monkeypatch):
     # Clear any .env overrides so we test actual code defaults
     monkeypatch.delenv("DEFAULT_MODEL", raising=False)
     monkeypatch.delenv("TASK_TIMEOUT_SECONDS", raising=False)
-    monkeypatch.delenv("LITELLM_URL", raising=False)
+    monkeypatch.delenv("LMSTUDIO_URL", raising=False)
 
     settings = Settings(_env_file=None)  # skip .env file
     assert settings.default_model == "sonnet"
     assert settings.task_timeout_seconds == 600
-    assert settings.litellm_url == "http://localhost:4000"
+    assert settings.lmstudio_url == "http://localhost:1234/v1"
 
 
 def test_load_models(tmp_path):
     models_file = tmp_path / "models.json"
     models_file.write_text(json.dumps({
         "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
-        "local": {"provider": "litellm", "model_id": "ollama/qwen3"},
+        "qwen": {"provider": "lmstudio", "model_id": "qwen/qwen3.6-35b-a3b"},
     }))
     models = load_models(models_file)
     assert models["sonnet"]["provider"] == "anthropic"
-    assert models["local"]["model_id"] == "ollama/qwen3"
+    assert models["qwen"]["model_id"] == "qwen/qwen3.6-35b-a3b"
 
 
 def test_load_models_missing_file():
