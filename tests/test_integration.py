@@ -13,6 +13,7 @@ def settings(tmp_path):
     return Settings(
         slack_bot_token="xoxb-test",
         slack_app_token="xapp-test",
+        olla_url="http://test-olla:40114/olla/proxy/v1",
         repos_base_dir=str(tmp_path),
         _env_file=None,
     )

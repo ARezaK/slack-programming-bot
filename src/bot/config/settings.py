@@ -10,10 +10,10 @@ class Settings(BaseSettings):
 
     slack_bot_token: str
     slack_app_token: str
+    olla_url: str
     repos_base_dir: str = "/Users/Shared/github"
-    lmstudio_url: str = "http://localhost:1234/v1"
     default_model: str = "sonnet"
-    task_timeout_seconds: int = 600
+    task_timeout_seconds: int = 900
 
 
 @lru_cache

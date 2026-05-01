@@ -50,7 +50,7 @@ uv run bot-cli run
 | `SLACK_BOT_TOKEN` | Yes | - | Bot User OAuth Token (`xoxb-...`) |
 | `SLACK_APP_TOKEN` | Yes | - | App-Level Token (`xapp-...`) for Socket Mode |
 | `REPOS_BASE_DIR` | No | `/Users/Shared/github` | Directory containing all your repos |
-| `LMSTUDIO_URL` | No | `http://localhost:1234/v1` | LM Studio OpenAI-compatible endpoint (override for remote/Tailscale) |
+| `OLLA_URL` | Yes | - | Olla LLM router endpoint (e.g. `http://127.0.0.1:40114/olla/proxy/v1`). See `/Users/Shared/github/llmhosting/`. |
 | `DEFAULT_MODEL` | No | `sonnet` | Default model when none specified |
 | `TASK_TIMEOUT_SECONDS` | No | `600` | Max time per task in seconds |
 
@@ -63,12 +63,12 @@ Maps model aliases to providers. Add new models by adding a line:
   "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
   "opus": {"provider": "anthropic", "model_id": "claude-opus-4-6"},
   "haiku": {"provider": "anthropic", "model_id": "claude-haiku-4-5-20251001"},
-  "qwen": {"provider": "lmstudio", "model_id": "qwen/qwen3.6-35b-a3b"}
+  "qwen": {"provider": "local", "model_id": "qwen/qwen3.6-35b-a3b"}
 }
 ```
 
 - `anthropic` provider: uses Claude Code CLI directly (your logged-in plan)
-- `lmstudio` provider: talks to an LM Studio server over its OpenAI-compatible API and runs a built-in tool loop (Read, Write, Edit, Bash). The `model_id` must match a model loaded in LM Studio.
+- `local` provider: talks to a local LLM via the Olla router (`OLLA_URL`) and runs a built-in tool loop (Read, Write, Edit, Bash). `model_id` is whatever Olla routes — either an alias from Olla's `model_aliases` config, or a real backend model name.
 
 ### Repo Registry (config/repos.json)
 
@@ -145,15 +145,15 @@ Note: the bot only responds when `@mentioned` — it won't react to casual messa
 
 ## Using Local Models
 
-Load a model in [LM Studio](https://lmstudio.ai/) and start its server (default port 1234). Set `LMSTUDIO_URL` in `.env` to the host:port (e.g. a Tailscale address if LM Studio is on another machine), then add an entry in `config/models.json`:
+Local models are served through [Olla](https://github.com/thushan/olla) (config in `/Users/Shared/github/llmhosting/`), which routes requests across our Tailscale fleet of Ollama / LM Studio / vLLM / llama.cpp boxes. Set `OLLA_URL` in `.env` to point at the Olla instance, then add an entry in `config/models.json`:
 
 ```json
-"qwen": {"provider": "lmstudio", "model_id": "qwen/qwen3.6-35b-a3b"}
+"qwen": {"provider": "local", "model_id": "qwen/qwen3.6-35b-a3b"}
 ```
 
 Then in Slack: `@bot model=qwen investigate this bug`.
 
-The bot calls LM Studio directly (no proxy) and runs its own tool-execution loop. We tried fronting LM Studio with the LiteLLM Anthropic-bridge so claude-agent-sdk could talk to it transparently, but the bridge mangled tool-call arguments — so non-Anthropic models go through a separate, simpler runner instead.
+The bot calls Olla over its OpenAI-compatible endpoint and runs its own tool-execution loop. We tried fronting LM Studio with the LiteLLM Anthropic-bridge so claude-agent-sdk could talk to it transparently, but the bridge mangled tool-call arguments — so non-Anthropic models go through a separate, simpler runner instead.
 
 ## Project Structure
 
@@ -165,7 +165,7 @@ src/bot/
     feedback.py        # Thread updates (ACK, progress, summary)
   executor/
     worker.py          # Claude Agent SDK execution (anthropic provider)
-    lmstudio_runner.py # OpenAI SDK + tool loop (lmstudio provider)
+    local_runner.py    # OpenAI SDK + tool loop (local provider, talks to Olla)
   app.py               # Slack Bolt + Socket Mode entrypoint
   cli.py               # CLI commands
 config/

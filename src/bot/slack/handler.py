@@ -6,7 +6,7 @@ from typing import Any
 
 from bot.config.settings import Settings, load_models, load_repos
 from bot.executor.worker import TaskRunner, TaskResult
-from bot.executor.lmstudio_runner import LMStudioRunner, LMStudioSession
+from bot.executor.local_runner import LocalRunner, LocalSession
 from bot.slack.feedback import SlackFeedback
 
 
@@ -30,8 +30,8 @@ class ThreadSession:
     model_name: str
     model_id: str
     provider: str
-    client: Any  # ClaudeSDKClient for anthropic, LMStudioSession for lmstudio
-    runner: Any  # TaskRunner or LMStudioRunner
+    client: Any  # ClaudeSDKClient for anthropic, LocalSession for local
+    runner: Any  # TaskRunner or LocalRunner
 
 
 async def fetch_thread_context(client, channel: str, thread_ts: str, bot_user_id: str | None = None) -> str | None:
@@ -158,9 +158,9 @@ async def _dispatch_new_task(
 
     repos = load_repos()
     repos_json = json.dumps(repos, indent=2)
-    if provider == "lmstudio":
-        runner: Any = LMStudioRunner(
-            base_url=settings.lmstudio_url,
+    if provider == "local":
+        runner: Any = LocalRunner(
+            base_url=settings.olla_url,
             repos_base_dir=settings.repos_base_dir,
             repos_json=repos_json,
         )
@@ -219,7 +219,7 @@ async def _dispatch_follow_up(
             thread_ts=thread_ts,
             timeout_seconds=settings.task_timeout_seconds,
         )
-        if isinstance(session.runner, LMStudioRunner):
+        if isinstance(session.runner, LocalRunner):
             kwargs["model_id"] = session.model_id
         result = await session.runner.continue_session(**kwargs)
 

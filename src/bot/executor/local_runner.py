@@ -1,6 +1,5 @@
 import asyncio
 import json
-import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -127,28 +126,28 @@ async def _execute_tool(name: str, args: dict[str, Any], default_cwd: str) -> st
 
 
 @dataclass
-class LMStudioSession:
+class LocalSession:
     """Per-thread conversation state for follow-ups."""
     messages: list[dict[str, Any]] = field(default_factory=list)
 
 
-class LMStudioRunner:
-    """Drives an LM Studio model with a tool-execution loop, mirroring TaskRunner's interface."""
+class LocalRunner:
+    """Drives a local LLM (via Olla) with a tool-execution loop, mirroring TaskRunner's interface."""
 
     def __init__(
         self,
         base_url: str,
         repos_base_dir: str,
         repos_json: str = "{}",
-        max_iterations: int = 30,
-        max_tokens: int = 8192,
+        max_iterations: int = 90,
+        max_tokens: int = 58192,
     ):
         self.base_url = base_url
         self.repos_base_dir = repos_base_dir
         self.repos_json = repos_json
         self.max_iterations = max_iterations
         self.max_tokens = max_tokens
-        self.client = AsyncOpenAI(base_url=base_url, api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"))
+        self.client = AsyncOpenAI(base_url=base_url, api_key="not-used")
 
     def _system_prompt(self) -> str:
         return SYSTEM_PROMPT_TEMPLATE.format(
@@ -164,8 +163,8 @@ class LMStudioRunner:
         channel: str,
         thread_ts: str,
         timeout_seconds: int = 600,
-    ) -> tuple[TaskResult, LMStudioSession]:
-        session = LMStudioSession(messages=[{"role": "system", "content": self._system_prompt()}])
+    ) -> tuple[TaskResult, LocalSession]:
+        session = LocalSession(messages=[{"role": "system", "content": self._system_prompt()}])
         result = await self._execute_turn(
             session, task_text, model_id, feedback, channel, thread_ts, timeout_seconds
         )
@@ -173,7 +172,7 @@ class LMStudioRunner:
 
     async def continue_session(
         self,
-        client: LMStudioSession,
+        client: LocalSession,
         task_text: str,
         feedback: SlackFeedback,
         channel: str,
@@ -182,14 +181,14 @@ class LMStudioRunner:
         model_id: str | None = None,
     ) -> TaskResult:
         if model_id is None:
-            raise ValueError("LMStudioRunner.continue_session requires model_id")
+            raise ValueError("LocalRunner.continue_session requires model_id")
         return await self._execute_turn(
             client, task_text, model_id, feedback, channel, thread_ts, timeout_seconds
         )
 
     async def _execute_turn(
         self,
-        session: LMStudioSession,
+        session: LocalSession,
         task_text: str,
         model_id: str,
         feedback: SlackFeedback,

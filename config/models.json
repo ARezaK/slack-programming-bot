@@ -2,5 +2,5 @@
   "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
   "opus": {"provider": "anthropic", "model_id": "claude-opus-4-6"},
   "haiku": {"provider": "anthropic", "model_id": "claude-haiku-4-5-20251001"},
-  "qwen": {"provider": "lmstudio", "model_id": "qwen/qwen3.6-35b-a3b"}
+  "qwen": {"provider": "local", "model_id": "qwen/qwen3.6-35b-a3b"}
 }

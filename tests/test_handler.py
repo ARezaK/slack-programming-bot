@@ -63,6 +63,7 @@ async def test_follow_up_uses_existing_session():
     settings = Settings(
         slack_bot_token="xoxb-test",
         slack_app_token="xapp-test",
+        olla_url="http://test-olla:40114/olla/proxy/v1",
         _env_file=None,
     )
 
