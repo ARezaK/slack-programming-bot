@@ -65,17 +65,35 @@ class TaskRunner:
         channel: str,
         thread_ts: str,
         timeout_seconds: int = 600,
-    ) -> tuple[TaskResult, ClaudeSDKClient]:
+    ) -> tuple[TaskResult, ClaudeSDKClient | None]:
         """Run a task, returning the result and the live client for follow-ups."""
         options = self._build_options(model_id)
         client = ClaudeSDKClient(options=options)
-        await client.connect()
+        try:
+            await client.connect()
+        except Exception as e:
+            error_info = self._format_error(e)
+            await feedback.send_error(channel, thread_ts, error_info)
+            return TaskResult(success=False, summary=error_info), None
 
         result = await self._execute_turn(
             client, task_text, feedback, channel, thread_ts, timeout_seconds
         )
         # Don't disconnect — keep client alive for follow-ups
         return result, client
+
+    def _format_error(self, error: Exception) -> str:
+        message = str(error)
+        if (
+            "Failed to authenticate" in message
+            or "authentication_error" in message
+            or "Invalid authentication credentials" in message
+        ):
+            return (
+                "Claude Code authentication failed. The bot host's Claude session looks stale. "
+                "Run `claude auth logout` and `claude auth login` on the bot machine, then retry."
+            )
+        return message
 
     async def continue_session(
         self,
@@ -127,7 +145,8 @@ class TaskRunner:
             await feedback.send_error(channel, thread_ts, f"Task timed out after {timeout_seconds}s")
             return TaskResult(success=False, summary="Timed out")
         except Exception as e:
-            await feedback.send_error(channel, thread_ts, str(e))
-            return TaskResult(success=False, summary=str(e))
+            error_info = self._format_error(e)
+            await feedback.send_error(channel, thread_ts, error_info)
+            return TaskResult(success=False, summary=error_info)
 
         return TaskResult(success=True, summary=last_text, progress_handle=progress)

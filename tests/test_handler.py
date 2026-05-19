@@ -137,3 +137,42 @@ async def test_fetch_thread_context_api_failure():
 
     result = await fetch_thread_context(mock_client, "C123", "1111.0000")
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_failed_new_task_does_not_store_thread_session():
+    mock_client = AsyncMock()
+    mock_client.chat_postMessage = AsyncMock(return_value={"ts": "2222.0000"})
+    mock_client.chat_update = AsyncMock(return_value={"ok": True})
+    mock_client.conversations_replies = AsyncMock(return_value={
+        "messages": [
+            {"user": "U001", "text": "<@UBOT> model=sonnet find the largest folder"},
+        ]
+    })
+
+    settings = Settings(
+        slack_bot_token="xoxb-test",
+        slack_app_token="xapp-test",
+        olla_url="http://test-olla:40114/olla/proxy/v1",
+        _env_file=None,
+    )
+    event = {
+        "text": "<@U123> model=sonnet find the largest folder",
+        "channel": "C123",
+        "ts": "1111.0000",
+    }
+
+    failed_result = MagicMock(success=False, summary="auth failed", cost_usd=None, progress_handle=None)
+    mock_runner = MagicMock()
+    mock_runner.run = AsyncMock(return_value=(failed_result, None))
+
+    with patch("bot.slack.handler.load_models", return_value={
+        "sonnet": {"provider": "anthropic", "model_id": "claude-sonnet-4-20250514"},
+    }), patch("bot.slack.handler.load_repos", return_value={}), patch(
+        "bot.slack.handler.TaskRunner", return_value=mock_runner
+    ):
+        task = await handle_mention(event, mock_client, settings)
+        if task:
+            await task
+
+    assert "1111.0000" not in _thread_sessions

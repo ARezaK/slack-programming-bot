@@ -184,14 +184,15 @@ async def _dispatch_new_task(
             cost_line = f"\n_Cost: ${result.cost_usd:.4f}_" if result.cost_usd else ""
             await feedback.finalize_progress(result.progress_handle, result.summary + cost_line)
 
-        # Store the live session for follow-ups
-        _thread_sessions[thread_ts] = ThreadSession(
-            model_name=model_name,
-            model_id=model_id,
-            provider=provider,
-            client=sdk_client,
-            runner=runner,
-        )
+        if result.success and sdk_client is not None:
+            # Store the live session for follow-ups only after a successful run.
+            _thread_sessions[thread_ts] = ThreadSession(
+                model_name=model_name,
+                model_id=model_id,
+                provider=provider,
+                client=sdk_client,
+                runner=runner,
+            )
         _active_tasks.pop(thread_ts, None)
 
     task = asyncio.create_task(_run_task())

@@ -1,6 +1,6 @@
 # tests/test_worker.py
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from bot.executor.worker import TaskRunner
 
 
@@ -29,3 +29,53 @@ def test_build_options():
     assert options.model == "claude-sonnet-4-20250514"
     assert options.cwd == "/tmp/repos"
     assert options.permission_mode == "bypassPermissions"
+
+
+@pytest.mark.asyncio
+async def test_run_returns_failed_result_on_connect_auth_error(mock_feedback):
+    runner = TaskRunner(repos_base_dir="/tmp/repos")
+    mock_sdk_client = AsyncMock()
+    mock_sdk_client.connect.side_effect = Exception(
+        'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
+    )
+
+    with patch("bot.executor.worker.ClaudeSDKClient", return_value=mock_sdk_client):
+        result, client = await runner.run(
+            task_text="find the largest folder",
+            model_id="claude-sonnet-4-20250514",
+            feedback=mock_feedback,
+            channel="C123",
+            thread_ts="1111.0000",
+        )
+
+    assert result.success is False
+    assert client is None
+    error_text = mock_feedback.send_error.await_args.args[2]
+    assert "Claude Code authentication failed" in error_text
+    assert "claude auth logout" in error_text
+    assert "claude auth login" in error_text
+
+
+@pytest.mark.asyncio
+async def test_run_rewrites_query_auth_error(mock_feedback):
+    runner = TaskRunner(repos_base_dir="/tmp/repos")
+    mock_sdk_client = AsyncMock()
+    mock_sdk_client.connect = AsyncMock()
+    mock_sdk_client.query.side_effect = Exception(
+        'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"}}'
+    )
+
+    with patch("bot.executor.worker.ClaudeSDKClient", return_value=mock_sdk_client):
+        result, client = await runner.run(
+            task_text="find the largest folder",
+            model_id="claude-sonnet-4-20250514",
+            feedback=mock_feedback,
+            channel="C123",
+            thread_ts="1111.0000",
+        )
+
+    assert result.success is False
+    assert client is mock_sdk_client
+    error_text = mock_feedback.send_error.await_args.args[2]
+    assert "Claude Code authentication failed" in error_text
+    assert "claude auth logout" in error_text
